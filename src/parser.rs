@@ -135,3 +135,9 @@ async fn test_parsing() {
     let map = parse_recipe("./tests/recipe.json").await.unwrap();
     dbg!(map);
 }
+
+#[tokio::test]
+async fn test_parsing_lk() {
+    let map = parse_livekit("./tests/livekit.json").await.unwrap();
+    dbg!(map);
+}

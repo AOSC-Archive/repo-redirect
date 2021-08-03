@@ -28,20 +28,18 @@ struct HelpContent {
 #[post("/download/alt")]
 async fn download_distribution(
     params: web::Form<DownloadRequest>,
-    tarballs: web::Data<SharedDistMap>,
+    tarballs: web::Data<(SharedDistMap, SharedDistMap)>,
 ) -> Result<HttpResponse, Error> {
-    if params
-        .distro_variant
-        .starts_with("https://")
-    {
+    if params.distro_variant.starts_with("https://") {
         return Ok(HttpResponse::Found()
             .append_header((http::header::LOCATION, params.distro_variant.clone()))
             .finish());
     }
-    if let Some(tarball) = tarballs.get(&params.distro_variant) {
+    if let Some(tarball) = tarballs.0.get(&params.distro_variant) {
         let url = format!("https://releases.aosc.io/{}", tarball.path);
+        let variant_name = params.distro_variant.split('.').next().unwrap_or("(?)");
         let help_content = HelpContent {
-            variant: params.distro_variant.clone(),
+            variant: variant_name.to_string(),
             arch: tarball.arch.clone(),
             sha256: tarball.sha256sum.clone(),
             url: url.clone(),
@@ -49,15 +47,20 @@ async fn download_distribution(
         .render_once()
         .unwrap_or_else(|_| url.clone());
 
-        Ok(HttpResponse::Ok().append_header((http::header::CONTENT_TYPE, "text/html")).body(help_content))
+        Ok(HttpResponse::Ok()
+            .append_header((http::header::CONTENT_TYPE, "text/html"))
+            .body(help_content))
     } else {
         Ok(HttpResponse::NotFound().finish())
     }
 }
 
 #[post("/download/livekit")]
-async fn download_livekit(params: web::Form<DownloadRequest>, tarballs: web::Data<SharedDistMap>,) -> Result<HttpResponse, Error> {
-    if let Some(tarball) = tarballs.get(&params.distro_variant) {
+async fn download_livekit(
+    params: web::Form<DownloadRequest>,
+    tarballs: web::Data<(SharedDistMap, SharedDistMap)>,
+) -> Result<HttpResponse, Error> {
+    if let Some(tarball) = tarballs.1.get(&params.distro_variant) {
         let url = format!("https://releases.aosc.io/{}", tarball.path);
         let help_content = HelpContent {
             variant: "Livekit".to_string(),
@@ -68,7 +71,9 @@ async fn download_livekit(params: web::Form<DownloadRequest>, tarballs: web::Dat
         .render_once()
         .unwrap_or_else(|_| url.clone());
 
-        Ok(HttpResponse::Ok().append_header((http::header::CONTENT_TYPE, "text/html")).body(help_content))
+        Ok(HttpResponse::Ok()
+            .append_header((http::header::CONTENT_TYPE, "text/html"))
+            .body(help_content))
     } else {
         Ok(HttpResponse::NotFound().finish())
     }
@@ -97,13 +102,18 @@ async fn main() -> std::io::Result<()> {
     let manifest_path = Path::new(&manifest_path);
 
     let shared_map = Arc::new(DashMap::new());
-    let monitor_worker = parser::monitor_recipe(manifest_path.join("recipe.json"), Arc::clone(&shared_map));
-    let monitor_worker_lk = parser::monitor_livekit(manifest_path.join("livekit.json"), Arc::clone(&shared_map));
+    let shared_map_lk = Arc::new(DashMap::new());
+    let monitor_worker =
+        parser::monitor_recipe(manifest_path.join("recipe.json"), Arc::clone(&shared_map));
+    let monitor_worker_lk = parser::monitor_livekit(
+        manifest_path.join("livekit.json"),
+        Arc::clone(&shared_map_lk),
+    );
 
     let server = HttpServer::new(move || {
         App::new()
             .wrap(middleware::Logger::default())
-            .app_data(web::Data::new(shared_map.clone()))
+            .app_data(web::Data::new((shared_map.clone(), shared_map_lk.clone())))
             .service(download_distribution)
             .service(download_livekit)
             .service(fallback_distribution)
