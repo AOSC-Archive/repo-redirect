@@ -16,3 +16,6 @@ inotify = { version = "0.9", features = [ "stream" ] }
 futures = "0.3"
 futures-util = "0.3"
 sailfish = "0.3"
+
+[profile.release]
+lto = "fat"
