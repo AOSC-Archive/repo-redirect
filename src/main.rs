@@ -25,6 +25,14 @@ struct HelpContent {
     sha256: String,
 }
 
+#[derive(TemplateOnce)]
+#[template(path = "404.html")]
+#[template(rm_whitespace = true)]
+struct NotFoundPage {
+    variant: String,
+    arch: String,
+}
+
 #[post("/download/alt")]
 async fn download_distribution(
     params: web::Form<DownloadRequest>,
@@ -35,9 +43,10 @@ async fn download_distribution(
             .append_header((http::header::LOCATION, params.distro_variant.clone()))
             .finish());
     }
+    let mut splitted = params.distro_variant.split('.');
+    let variant_name = splitted.next().unwrap_or("(?)");
     if let Some(tarball) = tarballs.0.get(&params.distro_variant) {
         let url = format!("https://releases.aosc.io/{}", tarball.path);
-        let variant_name = params.distro_variant.split('.').next().unwrap_or("(?)");
         let help_content = HelpContent {
             variant: variant_name.to_string(),
             arch: tarball.arch.clone(),
@@ -51,7 +60,17 @@ async fn download_distribution(
             .append_header((http::header::CONTENT_TYPE, "text/html"))
             .body(help_content))
     } else {
-        Ok(HttpResponse::NotFound().finish())
+        let arch = splitted.next().unwrap_or("(?)");
+        Ok(HttpResponse::NotFound()
+            .append_header((http::header::CONTENT_TYPE, "text/html"))
+            .body(
+                NotFoundPage {
+                    variant: variant_name.to_string(),
+                    arch: arch.to_string(),
+                }
+                .render_once()
+                .unwrap_or_else(|_| "Not Found".to_string()),
+            ))
     }
 }
 
@@ -75,7 +94,16 @@ async fn download_livekit(
             .append_header((http::header::CONTENT_TYPE, "text/html"))
             .body(help_content))
     } else {
-        Ok(HttpResponse::NotFound().finish())
+        Ok(HttpResponse::NotFound()
+            .append_header((http::header::CONTENT_TYPE, "text/html"))
+            .body(
+                NotFoundPage {
+                    variant: "Livekit".to_string(),
+                    arch: params.distro_variant.clone(),
+                }
+                .render_once()
+                .unwrap_or_else(|_| "Not Found".to_string()),
+            ))
     }
 }
 
